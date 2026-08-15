@@ -117,6 +117,7 @@ function App() {
   const activeTrackRef = useRef(activeTrack);
   const loadedVideoRef = useRef(null);
   const playbackStartedRef = useRef(false);
+  const wantsPlaybackRef = useRef(false);
 
   const heroTrack = activeTrack || tracks[0];
   const topTracks = useMemo(() => tracks.slice(0, 6), [tracks]);
@@ -198,8 +199,13 @@ function App() {
             const state = window.YT?.PlayerState || {};
             setIsPlaying(event.data === state.PLAYING);
             setDuration(event.target.getDuration() || 0);
-            if (event.data === state.PLAYING) setPlayerMessage("Playing from YouTube");
-            if (event.data === state.PAUSED) setPlayerMessage("Paused");
+            if (event.data === state.PLAYING) {
+              wantsPlaybackRef.current = true;
+              setPlayerMessage("Playing from YouTube");
+            }
+            if (event.data === state.PAUSED) {
+              setPlayerMessage(document.hidden && wantsPlaybackRef.current ? "Paused by mobile browser" : "Paused");
+            }
             if (event.data === state.BUFFERING) setPlayerMessage("Buffering");
 
             if (event.data === state.ENDED) {
@@ -283,6 +289,65 @@ function App() {
 
     return () => window.clearInterval(timer);
   }, [isPlayerReady]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden || !wantsPlaybackRef.current || !isPlayerReady || !activeTrackRef.current?.id) return;
+
+      setShouldAutoplay(true);
+      setPlayerMessage("Resuming playback");
+      playerRef.current?.playVideo?.();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handleVisibilityChange);
+    };
+  }, [isPlayerReady]);
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || !activeTrack) return;
+
+    if ("MediaMetadata" in window) {
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: activeTrack.spotifyTitle || activeTrack.title || "Streamify",
+        artist: activeTrack.spotifyArtist || activeTrack.artist || "YouTube",
+        album: queueLabel,
+        artwork: [
+          { src: thumbnailFor(activeTrack), sizes: "96x96", type: "image/jpeg" },
+          { src: thumbnailFor(activeTrack), sizes: "256x256", type: "image/jpeg" },
+          { src: thumbnailFor(activeTrack), sizes: "512x512", type: "image/jpeg" },
+        ],
+      });
+    }
+
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+
+    const actions = {
+      play: () => {
+        wantsPlaybackRef.current = true;
+        setShouldAutoplay(true);
+        playerRef.current?.playVideo?.();
+      },
+      pause: () => {
+        wantsPlaybackRef.current = false;
+        playerRef.current?.pauseVideo?.();
+      },
+      previoustrack: () => playAdjacentTrack(-1),
+      nexttrack: () => playAdjacentTrack(1),
+    };
+
+    for (const [action, handler] of Object.entries(actions)) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {
+        // Some mobile browsers expose Media Session but do not support every action.
+      }
+    }
+  }, [activeTrack, isPlaying, queueLabel]);
 
   async function loadFeatured() {
     setLoading(true);
@@ -406,6 +471,7 @@ function App() {
 
   function startTrack(track, queue = null, sourceLabel = null) {
     playbackStartedRef.current = true;
+    wantsPlaybackRef.current = true;
     if (queue?.length) {
       setPlayQueue(queue);
       queueRef.current = queue;
@@ -432,10 +498,12 @@ function App() {
     if (!isPlayerReady) return;
 
     if (isPlaying) {
+      wantsPlaybackRef.current = false;
       playerRef.current?.pauseVideo();
       setPlayerMessage("Paused");
     } else {
       playbackStartedRef.current = true;
+      wantsPlaybackRef.current = true;
       setShouldAutoplay(true);
       setPlayerMessage("Loading track");
       if (activeTrack?.id && loadedVideoRef.current !== activeTrack.id) {
