@@ -65,6 +65,18 @@ npm run test:smoke
 
 Menjalankan smoke test dengan Playwright.
 
+## Deploy ke Vercel
+
+Project ini sudah menyertakan serverless API route untuk Vercel di folder `api`. Setelah deploy, endpoint berikut akan tersedia:
+
+```text
+/api/featured
+/api/search?q=nama-lagu
+/api/import-spotify
+```
+
+Jika sebelumnya deploy menghasilkan `404 Not Found` saat add playlist, deploy ulang setelah file `api/[...path].js`, `server/app.js`, dan `vercel.json` ikut ter-push ke repository.
+
 ## Catatan
 
 Fitur pencarian YouTube dan import playlist Spotify bergantung pada halaman publik dari masing-masing layanan. Jika struktur halaman berubah, scraping bisa perlu disesuaikan lagi.
